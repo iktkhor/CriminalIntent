@@ -21,7 +21,6 @@ class MainActivity : AppCompatActivity(), CrimeListFragment.Callbacks {
                 .add(R.id.fragment_container, fragment)
                 .commit()
         }
-
     }
 
     override fun onCrimeSelected(crimeId: UUID) {
