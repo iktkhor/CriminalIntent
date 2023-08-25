@@ -16,6 +16,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
@@ -28,7 +30,6 @@ private const val TAG = "CrimeFragment"
 private const val ARG_CRIME_ID = "crime_id"
 private const val DIALOG_DATE = "DialogDate"
 private const val REQUEST_DATE = 0
-private const val REQUEST_CONTACT = 1
 private const val REQUEST_PHOTO = 2
 private const val DATE_FORMAT = "EEE, MMM, dd"
 
@@ -46,6 +47,29 @@ class CrimeFragment : Fragment(), DatePickerFragment.Callbacks {
     private lateinit var photoView: ImageView
     private val  crimeDetailViewModel: CrimeDetailViewModel by lazy {
         ViewModelProvider(this)[CrimeDetailViewModel::class.java]
+    }
+
+    private val pickContactLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val contactUri: Uri? = result.data?.data
+            // Указать, для каких полей ваш запрос должен возвращать значения.
+            val queryFields = arrayOf(ContactsContract.Contacts.DISPLAY_NAME)
+            // Выполняемый здесь запрос — contactUri похож на предложение "where"
+            val cursor = requireActivity().contentResolver
+                .query(contactUri!!, queryFields, null, null, null)
+            cursor?.use {
+                // Verify cursor contains at least one result
+                if (it.count != 0) {
+                    // Первый столбец первой строки данных — это имя вашего подозреваемого.
+                    it.moveToFirst()
+                    val suspect = it.getString(0)
+                    crime.suspect = suspect
+                    crimeDetailViewModel.saveCrime(crime)
+                    suspectButton.text = suspect
+                }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,7 +159,7 @@ class CrimeFragment : Fragment(), DatePickerFragment.Callbacks {
             val pickContactIntent =
                 Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI)
             setOnClickListener {
-                startActivityForResult(pickContactIntent, REQUEST_CONTACT)
+                pickContactLauncher.launch(pickContactIntent)
             }
         }
 
@@ -150,17 +174,17 @@ class CrimeFragment : Fragment(), DatePickerFragment.Callbacks {
             }
             setOnClickListener {
                 Log.d(TAG, "imageButtonListener")
-//                captureImage.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-//                val cameraActivities: List<ResolveInfo> =
-//                    packageManager.queryIntentActivities(captureImage,
-//                        PackageManager.MATCH_DEFAULT_ONLY)
-//                for (cameraActivity in cameraActivities) {
-//                    requireActivity().grantUriPermission(
-//                        cameraActivity.activityInfo.packageName,
-//                        photoUri,
-//                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-//                }
-//                startActivityForResult(captureImage, REQUEST_PHOTO)
+                captureImage.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+                val cameraActivities: List<ResolveInfo> =
+                    packageManager.queryIntentActivities(captureImage,
+                        PackageManager.MATCH_DEFAULT_ONLY)
+                for (cameraActivity in cameraActivities) {
+                    requireActivity().grantUriPermission(
+                        cameraActivity.activityInfo.packageName,
+                        photoUri,
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+                startActivityForResult(captureImage, REQUEST_PHOTO)
             }
         }
     }
@@ -187,33 +211,6 @@ class CrimeFragment : Fragment(), DatePickerFragment.Callbacks {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        when {
-            resultCode != Activity.RESULT_OK -> return
-            requestCode == REQUEST_CONTACT && data != null -> {
-                val contactUri: Uri? = data.data
-                // Указать, для каких полей ваш запрос должен возвращать значения.
-                val queryFields = arrayOf(ContactsContract.Contacts.DISPLAY_NAME)
-                // Выполняемый здесь запрос — contactUri похож на предложение "where"
-                val cursor = requireActivity().contentResolver
-                    .query(contactUri!!, queryFields, null, null, null)
-                cursor?.use {
-                    // Verify cursor contains at least one result
-                    if (it.count == 0) {
-                        return
-                    }
-                    // Первый столбец первой строки данных —
-// это имя вашего подозреваемого.
-                    it.moveToFirst()
-                    val suspect = it.getString(0)
-                    crime.suspect = suspect
-                    crimeDetailViewModel.saveCrime(crime)
-                    suspectButton.text = suspect
-                }
-            }
-        }
-    }
-
     private fun getCrimeReport(): String {
         val solvedString = if (crime.isSolved) {
             getString(R.string.crime_report_solved)
@@ -232,11 +229,10 @@ class CrimeFragment : Fragment(), DatePickerFragment.Callbacks {
 
     companion object {
         fun newInstance(crimeId: UUID): CrimeFragment {
-            val args = Bundle().apply {
-                putSerializable(ARG_CRIME_ID, crimeId)
-            }
             return CrimeFragment().apply {
-                arguments = args
+                arguments = Bundle().apply {
+                    putSerializable(ARG_CRIME_ID, crimeId)
+                }
             }
         }
     }
